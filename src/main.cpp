@@ -32,7 +32,7 @@ int main(int argc, char **argv)
     global->network_data->recv_active = true;
 
     // Create Ground Station Network thread IDs.
-    pthread_t net_polling_tid, net_rx_tid, xband_status_tid;
+    pthread_t net_polling_tid, net_rx_tid, xband_status_tid, xband_power_pid_tid;
 
     // Try to initialize radio. This is checked on every attempted transmit, and init() is re-called from there if necessary.
     if (gs_xband_init(global) < 0)
@@ -63,6 +63,7 @@ int main(int argc, char **argv)
         pthread_create(&net_polling_tid, NULL, gs_polling_thread, global->network_data);
         pthread_create(&net_rx_tid, NULL, gs_network_rx_thread, global);
         pthread_create(&xband_status_tid, NULL, xband_status_thread, global);
+        pthread_create(&xband_power_pid_tid, NULL, xband_power_pid_thread, global);
 
         void *thread_return;
         pthread_join(net_polling_tid, &thread_return);
