@@ -543,9 +543,13 @@ void *xband_power_pid_thread(void *args)
     return NULL;
 }
 
+// May require running as sudo -i ./ (root)
+// See md5hash function for piping in cat command output.
 double read_rf_power()
 {
-    char filename[256] = "file_name";
+    // Probably file name:
+    // /sys/bus/iio/devices/iio:device0/in_voltage0_vccint_raw
+    char filename[256] = "/sys/bus/iio/devices/iio:device0/in_voltage0_vccint_raw";
     FILE *fp = fopen(filename, "r");
     int mV = 0;
     if (fp == NULL)
@@ -553,7 +557,28 @@ double read_rf_power()
         dbprintlf(RED_FG "Unable to open file: %s", filename);
         return -1;
     }
+
     fscanf(fp, "%d", &mV);
     fclose(fp);
     return mV;
+}
+
+// Uses pipe
+double pread_rf_power()
+{
+    char cmd[256] = "xadc_get_value_vccaux";
+    char buf[256];
+
+    FILE *fp = popen(cmd, "r");
+    if (fp == NULL)
+    {
+        dbprintlf(RED_FG "Unable to open pipe: %s", cmd);
+        return -1;
+    }
+
+    fread(buf, 1, sizeof(buf), fp);
+
+    pclose(fp);
+
+    return atoi(buf);
 }
