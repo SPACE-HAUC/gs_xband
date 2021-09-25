@@ -545,6 +545,15 @@ void *xband_power_pid_thread(void *args)
 
 double read_rf_power()
 {
-    // TODO: Make work.
-    return 0.0;
+    char filename[256] = "file_name";
+    FILE *fp = fopen(filename, "r");
+    int mV = 0;
+    if (fp == NULL)
+    {
+        dbprintlf(RED_FG "Unable to open file: %s", filename);
+        return -1;
+    }
+    fscanf(fp, "%d", &mV);
+    fclose(fp);
+    return mV;
 }
