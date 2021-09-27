@@ -166,9 +166,9 @@ void *gs_network_rx_thread(void *args)
                         }
 
                         // RECONFIGURE XBAND
-                        // This will now be handled by the PID thread.
-                        // adradio_set_ensm_mode(global->radio, (ensm_mode)config->mode);
-                        global->desired_mode = (ensm_mode)config->mode;
+                        // ~~This will now be handled by the PID thread.~~
+                        adradio_set_ensm_mode(global->radio, (ensm_mode)config->mode);
+                        // global->desired_mode = (ensm_mode)config->mode;
                         adradio_set_tx_lo(global->radio, config->LO);
                         adradio_set_samp(global->radio, config->samp);
                         adradio_set_tx_bw(global->radio, config->bw);
@@ -177,10 +177,10 @@ void *gs_network_rx_thread(void *args)
                         snprintf(filter_name, sizeof(filter_name), "/home/sunip/%s.ftr", config->ftr_name);
                         adradio_load_fir(global->radio, filter_name);
 
-                        // Keeps track of the power commanded to the radio to adjust later via PID loop.
-                        global->desired_power = config->gain;
-                        // This will now be handled by the PID thread.
-                        // adradio_set_tx_hardwaregain(global->radio, config->gain);
+                        // ~~Keeps track of the power commanded to the radio to adjust later via PID loop.~~
+                        // global->desired_power = config->gain;
+                        // ~~This will now be handled by the PID thread.~~
+                        adradio_set_tx_hardwaregain(global->radio, config->gain);
 
                         global->tx_modem->mtu = config->MTU;
                     }
@@ -409,176 +409,176 @@ void *xband_status_thread(void *args)
     return NULL;
 }
 
-void *xband_power_pid_thread(void *args)
-{
-    global_data_t *global = (global_data_t *)args;
-    NetDataClient *netdata = global->network_data;
+// void *xband_power_pid_thread(void *args)
+// {
+//     global_data_t *global = (global_data_t *)args;
+//     NetDataClient *netdata = global->network_data;
 
-    while (netdata->thread_status > 0)
-    {
-        usleep(0.01 SEC);
+//     while (netdata->thread_status > 0)
+//     {
+//         usleep(0.01 SEC);
 
-        // TODO: Should we wait if radio isn't ready? Anything else we should wait for?
-        if (global->desired_power == 0 || !global->radio_ready)
-        {
-            dbprintlf(YELLOW_FG "Commanded power: %d, Radio ready? %s", global->desired_power, global->radio_ready ? "YES" : "NO");
-            usleep(2 SEC);
-            continue;
-        }
+//         // TODO: Should we wait if radio isn't ready? Anything else we should wait for?
+//         if (global->desired_power == 0 || !global->radio_ready)
+//         {
+//             dbprintlf(YELLOW_FG "Commanded power: %d, Radio ready? %s", global->desired_power, global->radio_ready ? "YES" : "NO");
+//             usleep(2 SEC);
+//             continue;
+//         }
 
-        ensm_mode curr_mode;
-        char buf[32];
-        memset(buf, 0x0, 32);
-        adradio_get_ensm_mode(global->radio, buf, sizeof(buf));
-        dbprintlf("PID read ensm mode: %s", buf);
-        if (strcmp(buf, "sleep") == 0)
-        {
-            curr_mode = SLEEP;
-        }
-        else if (strcmp(buf, "fdd") == 0)
-        {
-            curr_mode = FDD;
-        }
-        else if (strcmp(buf, "tdd") == 0)
-        {
-            curr_mode = TDD;
-        }
+//         ensm_mode curr_mode;
+//         char buf[32];
+//         memset(buf, 0x0, 32);
+//         adradio_get_ensm_mode(global->radio, buf, sizeof(buf));
+//         dbprintlf("PID read ensm mode: %s", buf);
+//         if (strcmp(buf, "sleep") == 0)
+//         {
+//             curr_mode = SLEEP;
+//         }
+//         else if (strcmp(buf, "fdd") == 0)
+//         {
+//             curr_mode = FDD;
+//         }
+//         else if (strcmp(buf, "tdd") == 0)
+//         {
+//             curr_mode = TDD;
+//         }
 
-        global->actual_power = mV_TO_RFP(read_rf_power());
+//         global->actual_power = mV_TO_RFP(read_rf_power());
 
-        // Prioritize sleeping if desired.
-        if (global->desired_mode == SLEEP && curr_mode != SLEEP)
-        {
-            if (global->transmitting)
-            {
-                dbprintlf(RED_BG "ATTENTION: SLEEP ATTEMPT ABORTED! CANNOT PUT RADIO TO SLEEP WHILE TRANSMITTING!");
-                usleep(0.2 SEC);
-                continue;
-            }
+//         // Prioritize sleeping if desired.
+//         if (global->desired_mode == SLEEP && curr_mode != SLEEP)
+//         {
+//             if (global->transmitting)
+//             {
+//                 dbprintlf(RED_BG "ATTENTION: SLEEP ATTEMPT ABORTED! CANNOT PUT RADIO TO SLEEP WHILE TRANSMITTING!");
+//                 usleep(0.2 SEC);
+//                 continue;
+//             }
 
-            adradio_set_ensm_mode(global->radio, global->desired_mode);
-        }
+//             adradio_set_ensm_mode(global->radio, global->desired_mode);
+//         }
 
-        // Algorithm.
-        if (curr_mode == SLEEP) // Asleep
-        {
-            if (global->actual_power < (global->desired_power - RFP_LEEWAY))
-            {
-                global->commanded_power += RFP_INCREMENT;
-                if (global->commanded_power > RFP_CMD_MAX)
-                {
-                    dbprintlf(RED_FG "Minimum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
-                    global->commanded_power = RFP_CMD_MIN;
-                }
-                else if (global->commanded_power < RFP_CMD_MIN)
-                {
-                    dbprintlf(RED_FG "Maximum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
-                    global->commanded_power = RFP_CMD_MAX;
-                }
-                adradio_set_tx_hardwaregain(global->radio, global->commanded_power);
-            }
-            else if (global->actual_power > (global->desired_power + RFP_LEEWAY))
-            {
-                global->commanded_power += RFP_INCREMENT;
-                if (global->commanded_power > RFP_CMD_MAX)
-                {
-                    dbprintlf(RED_FG "Minimum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
-                    global->commanded_power = RFP_CMD_MIN;
-                }
-                else if (global->commanded_power < RFP_CMD_MIN)
-                {
-                    dbprintlf(RED_FG "Maximum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
-                    global->commanded_power = RFP_CMD_MAX;
-                }
-                adradio_set_tx_hardwaregain(global->radio, global->commanded_power);
-            }
-            else
-            {
-                // Within proper range.
-                if (global->desired_mode != SLEEP)
-                {
-                    adradio_set_ensm_mode(global->radio, global->desired_mode);
-                }
-            }
-        }
-        else // Awake
-        {
-            if (global->actual_power < (global->desired_power - RFP_LEEWAY))
-            {
-                global->commanded_power += RFP_INCREMENT;
-                if (global->commanded_power > RFP_CMD_MAX)
-                {
-                    dbprintlf(RED_FG "Minimum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
-                    global->commanded_power = RFP_CMD_MIN;
-                }
-                else if (global->commanded_power < RFP_CMD_MIN)
-                {
-                    dbprintlf(RED_FG "Maximum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
-                    global->commanded_power = RFP_CMD_MAX;
-                }
-                adradio_set_tx_hardwaregain(global->radio, global->commanded_power);
-            }
-            else if (global->actual_power > (global->desired_power + RFP_LEEWAY))
-            {
-                global->commanded_power += RFP_INCREMENT;
-                if (global->commanded_power > RFP_CMD_MAX)
-                {
-                    dbprintlf(RED_FG "Minimum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
-                    global->commanded_power = RFP_CMD_MIN;
-                }
-                else if (global->commanded_power < RFP_CMD_MIN)
-                {
-                    dbprintlf(RED_FG "Maximum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
-                    global->commanded_power = RFP_CMD_MAX;
-                }
-                adradio_set_tx_hardwaregain(global->radio, global->commanded_power);
-            }
-        }
-    }
+//         // Algorithm.
+//         if (curr_mode == SLEEP) // Asleep
+//         {
+//             if (global->actual_power < (global->desired_power - RFP_LEEWAY))
+//             {
+//                 global->commanded_power += RFP_INCREMENT;
+//                 if (global->commanded_power > RFP_CMD_MAX)
+//                 {
+//                     dbprintlf(RED_FG "Minimum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
+//                     global->commanded_power = RFP_CMD_MIN;
+//                 }
+//                 else if (global->commanded_power < RFP_CMD_MIN)
+//                 {
+//                     dbprintlf(RED_FG "Maximum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
+//                     global->commanded_power = RFP_CMD_MAX;
+//                 }
+//                 adradio_set_tx_hardwaregain(global->radio, global->commanded_power);
+//             }
+//             else if (global->actual_power > (global->desired_power + RFP_LEEWAY))
+//             {
+//                 global->commanded_power += RFP_INCREMENT;
+//                 if (global->commanded_power > RFP_CMD_MAX)
+//                 {
+//                     dbprintlf(RED_FG "Minimum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
+//                     global->commanded_power = RFP_CMD_MIN;
+//                 }
+//                 else if (global->commanded_power < RFP_CMD_MIN)
+//                 {
+//                     dbprintlf(RED_FG "Maximum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
+//                     global->commanded_power = RFP_CMD_MAX;
+//                 }
+//                 adradio_set_tx_hardwaregain(global->radio, global->commanded_power);
+//             }
+//             else
+//             {
+//                 // Within proper range.
+//                 if (global->desired_mode != SLEEP)
+//                 {
+//                     adradio_set_ensm_mode(global->radio, global->desired_mode);
+//                 }
+//             }
+//         }
+//         else // Awake
+//         {
+//             if (global->actual_power < (global->desired_power - RFP_LEEWAY))
+//             {
+//                 global->commanded_power += RFP_INCREMENT;
+//                 if (global->commanded_power > RFP_CMD_MAX)
+//                 {
+//                     dbprintlf(RED_FG "Minimum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
+//                     global->commanded_power = RFP_CMD_MIN;
+//                 }
+//                 else if (global->commanded_power < RFP_CMD_MIN)
+//                 {
+//                     dbprintlf(RED_FG "Maximum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
+//                     global->commanded_power = RFP_CMD_MAX;
+//                 }
+//                 adradio_set_tx_hardwaregain(global->radio, global->commanded_power);
+//             }
+//             else if (global->actual_power > (global->desired_power + RFP_LEEWAY))
+//             {
+//                 global->commanded_power += RFP_INCREMENT;
+//                 if (global->commanded_power > RFP_CMD_MAX)
+//                 {
+//                     dbprintlf(RED_FG "Minimum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
+//                     global->commanded_power = RFP_CMD_MIN;
+//                 }
+//                 else if (global->commanded_power < RFP_CMD_MIN)
+//                 {
+//                     dbprintlf(RED_FG "Maximum commanded power (%.1f dBm) reached but output still not meeting target (%.1f vs %.1f). Clamping.", global->commanded_power, global->actual_power, global->desired_power);
+//                     global->commanded_power = RFP_CMD_MAX;
+//                 }
+//                 adradio_set_tx_hardwaregain(global->radio, global->commanded_power);
+//             }
+//         }
+//     }
 
-    dbprintlf(FATAL "XBAND_POWER_PID_THREAD IS EXITING!") if (netdata->thread_status > 0)
-    {
-        netdata->thread_status = 0;
-    }
-    return NULL;
-}
+//     dbprintlf(FATAL "XBAND_POWER_PID_THREAD IS EXITING!") if (netdata->thread_status > 0)
+//     {
+//         netdata->thread_status = 0;
+//     }
+//     return NULL;
+// }
 
 // May require running as sudo -i ./ (root)
 // See md5hash function for piping in cat command output.
-double read_rf_power()
-{
-    // Probably file name:
-    // /sys/bus/iio/devices/iio:device0/in_voltage0_vccint_raw
-    char filename[256] = "/sys/bus/iio/devices/iio:device0/in_voltage0_vccint_raw";
-    FILE *fp = fopen(filename, "r");
-    int mV = 0;
-    if (fp == NULL)
-    {
-        dbprintlf(RED_FG "Unable to open file: %s", filename);
-        return -1;
-    }
+// double read_rf_power()
+// {
+//     // Probably file name:
+//     // /sys/bus/iio/devices/iio:device0/in_voltage0_vccint_raw
+//     char filename[256] = "/sys/bus/iio/devices/iio:device0/in_voltage0_vccint_raw";
+//     FILE *fp = fopen(filename, "r");
+//     int mV = 0;
+//     if (fp == NULL)
+//     {
+//         dbprintlf(RED_FG "Unable to open file: %s", filename);
+//         return -1;
+//     }
 
-    fscanf(fp, "%d", &mV);
-    fclose(fp);
-    return mV;
-}
+//     fscanf(fp, "%d", &mV);
+//     fclose(fp);
+//     return mV;
+// }
 
 // Uses pipe
-double pread_rf_power()
-{
-    char cmd[256] = "xadc_get_value_vccaux";
-    char buf[256];
+// double pread_rf_power()
+// {
+//     char cmd[256] = "xadc_get_value_vccaux";
+//     char buf[256];
 
-    FILE *fp = popen(cmd, "r");
-    if (fp == NULL)
-    {
-        dbprintlf(RED_FG "Unable to open pipe: %s", cmd);
-        return -1;
-    }
+//     FILE *fp = popen(cmd, "r");
+//     if (fp == NULL)
+//     {
+//         dbprintlf(RED_FG "Unable to open pipe: %s", cmd);
+//         return -1;
+//     }
 
-    fread(buf, 1, sizeof(buf), fp);
+//     fread(buf, 1, sizeof(buf), fp);
 
-    pclose(fp);
+//     pclose(fp);
 
-    return atoi(buf);
-}
+//     return atoi(buf);
+// }
