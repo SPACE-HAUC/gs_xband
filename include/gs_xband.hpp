@@ -18,11 +18,12 @@
 #include "network.hpp"
 #include "libiio.h"
 
-// #define mV_TO_RFP(n) (((420 * (n/1000)) / 11) - 42)
-// #define RFP_LEEWAY 0.5 // dBm
-// #define RFP_INCREMENT 0.25 // dBm, minimum possible increment
-// #define RFP_CMD_MAX 0.0
-// #define RFP_CMD_MIN -85.0
+// Based on graph given by Sanj.
+#define mV_TO_RFP(n) (((420 * (n/1000)) / 11) - 42)
+#define RFP_LEEWAY 0.5 // dBm
+#define RFP_INCREMENT 0.25 // dBm, minimum possible increment
+#define RFP_CMD_MAX 0.0
+#define RFP_CMD_MIN -85.0
 #define SEC *1000000
 #define SERVER_PORT 54220
 
@@ -32,10 +33,11 @@ typedef struct
     adf4355 PLL[1];
     adradio_t radio[1];
 
-    // double desired_power;       // Power requested via gs_client, target.
-    // double commanded_power;     // Power commanded by gs_xband, adjustable.
-    // double actual_power;        // Power read from coupler, real.
-    // ensm_mode desired_mode;
+    double desired_power;       // Power requested via gs_client, target.
+    double commanded_power;     // Power commanded by gs_xband, adjustable.
+    double actual_power;        // Power read from coupler, real.
+    ensm_mode desired_mode;
+    bool adrs_pid_active;
 
     bool tx_modem_ready;
     bool PLL_ready;
@@ -114,6 +116,8 @@ void *xband_status_thread(void *args);
 
 void *xband_power_pid_thread(void *args);
 
-double read_rf_power();
+float ads_to_power(int16_t *ads_data);
+
+// double read_rf_power();
 
 #endif // GS_XBAND_HPP

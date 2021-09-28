@@ -13,3 +13,6 @@
 [submodule "gpiodev"]
 	path = gpiodev
 	url = git@github.com:SPACE-HAUC/gpiodev
+[submodule "i2cbus"]
+	path = i2cbus
+	url = git@github.com:space-hauc/i2cbus

@@ -1,9 +1,9 @@
 CXX = g++
 CC = gcc
 CPPOBJS = src/main.o src/gs_xband.o network/network.o
-COBJS = modem/src/libuio.o modem/src/libiio.o modem/src/adidma.o modem/src/txmodem.o adf4355/adf4355.o spibus/spibus.o gpiodev/gpiodev.o
+COBJS = modem/src/libuio.o modem/src/libiio.o modem/src/adidma.o modem/src/txmodem.o adf4355/adf4355.o spibus/spibus.o gpiodev/gpiodev.o src/ads1115.o i2cbus/i2cbus.o 
 EDCXXFLAGS = $(CXXFLAGS) -I ./ -I ./include/ -I ./modem/ -I ./modem/include/ -I ./network/ -I ./adf4355/ -I ./spibus/ -Wall -pthread -std=c++17 -DGSNID=\"roofxband\"
-EDCFLAGS = $(CFLAGS) -I ./ -I ./include/ -I ./modem/ -I ./modem/include/ -I ./network/ -I ./adf4355/ -I ./spibus/ -Wall -pthread -std=gnu11 -DADIDMA_NOIRQ
+EDCFLAGS = $(CFLAGS) -I ./ -I ./include/ -I ./modem/ -I ./modem/include/ -I ./network/ -I ./adf4355/ -I ./spibus/ -I ./i2cbus/ -Wall -pthread -std=gnu11 -DADIDMA_NOIRQ
 TARGET = roof_xband.out
 EDLDFLAGS = $(LDFLAGS) -lpthread -liio
 
@@ -28,3 +28,4 @@ clean:
 	$(RM) gpiodev/*.o
 	$(RM) spibus/*.o
 	$(RM) modem/src/*.o
+	$(RM) i2cbus/*.o
